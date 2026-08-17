@@ -81,6 +81,24 @@ ADMIN authentication accounts. The command uses Argon2id, PostgreSQL's existing
 `USER_ID` default, and refuses to run when `NODE_ENV=production`. It seeds only
 the two development users and does not run automatically during application startup.
 
+## Development template catalog
+
+Invitation creation requires an active `TB_M_TEMPLATE_VERSION` because
+`TB_R_INVITATION_H.TEMPLATE_VERSION_CD` is mandatory and foreign-keyed to that
+master. Run `npm run seed:dev:templates` before developing invitation creation.
+
+The development-only command idempotently manages these approved keys and their
+single active/current `1.0.0` versions: `SUNDAY_BLOOM`, `AFTERGLOW`,
+`PAPER_HEARTS`, `MIDNIGHT_KISS`, `CHERRY_LOVE`, and `SOFT_PROMISE`. It resolves
+the `WEDDING` invitation type and template categories by business key, lets the
+database generate `TPL`/`TPV` codes, and refuses to run in production.
+
+Only those six template and version master rows can be inserted or reconciled;
+the seed never creates invitations or related transaction, user, order, or
+payment data. Rerunning it leaves matching rows unchanged. Rows owned by another
+creator or master keys that are missing, inactive, or deleted cause a safe
+failure instead of being overwritten or repaired.
+
 ## Validation
 
 ```bash

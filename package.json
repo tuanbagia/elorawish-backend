@@ -16,6 +16,7 @@
     "prisma:generate": "prisma generate",
     "db:check": "node scripts/read-only-db-check.js",
     "seed:dev": "node scripts/seed-dev-users.js",
+    "seed:dev:templates": "node scripts/seed-dev-templates.js",
     "validate": "npm run lint && npm test"
   },
   "dependencies": {
