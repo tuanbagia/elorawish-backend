@@ -1,0 +1,493 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_m_invitation_type {
+  invitation_type_cd String              @id(map: "pk_tb_m_invitation_type") @default(dbgenerated("fn_generate_master_code('ITY'::text, 'seq_invitation_type_cd'::regclass)")) @db.VarChar(30)
+  type_key           String              @unique(map: "uq_tb_m_invitation_type_key") @db.VarChar(50)
+  type_name          String              @db.VarChar(100)
+  description        String?             @db.VarChar(500)
+  active_flag        Boolean             @default(true)
+  sort_order         Int                 @default(0)
+  created_by         String              @db.VarChar(30)
+  created_dt         DateTime            @default(now()) @db.Timestamptz(6)
+  changed_by         String?             @db.VarChar(30)
+  changed_dt         DateTime?           @db.Timestamptz(6)
+  deleted_flag       Boolean             @default(false)
+  deleted_by         String?             @db.VarChar(30)
+  deleted_dt         DateTime?           @db.Timestamptz(6)
+  tb_m_template      tb_m_template[]
+  tb_r_invitation_h  tb_r_invitation_h[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_m_package {
+  package_cd            String         @id(map: "pk_tb_m_package") @default(dbgenerated("fn_generate_master_code('PKG'::text, 'seq_package_cd'::regclass)")) @db.VarChar(30)
+  package_key           String         @unique(map: "uq_tb_m_package_key") @db.VarChar(50)
+  package_name          String         @db.VarChar(100)
+  description           String?
+  price_amt             Decimal        @default(0) @db.Decimal(18, 2)
+  active_days           Int
+  max_guest_qty         Int?
+  max_gallery_qty       Int?
+  custom_domain_flag    Boolean        @default(false)
+  remove_branding_flag  Boolean        @default(false)
+  premium_template_flag Boolean        @default(false)
+  feature_config        Json?
+  active_flag           Boolean        @default(true)
+  sort_order            Int            @default(0)
+  created_by            String         @db.VarChar(30)
+  created_dt            DateTime       @default(now()) @db.Timestamptz(6)
+  changed_by            String?        @db.VarChar(30)
+  changed_dt            DateTime?      @db.Timestamptz(6)
+  deleted_flag          Boolean        @default(false)
+  deleted_by            String?        @db.VarChar(30)
+  deleted_dt            DateTime?      @db.Timestamptz(6)
+  tb_r_order_d          tb_r_order_d[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tb_m_system {
+  system_type     String    @db.VarChar(50)
+  system_cd       String    @db.VarChar(50)
+  system_val_txt  String?   @db.VarChar(5000)
+  system_val_num  Decimal?  @db.Decimal(18, 2)
+  system_val_json Json?
+  remark          String?   @db.VarChar(5000)
+  active_flag     Boolean   @default(true)
+  valid_dt_fr     DateTime? @db.Date
+  valid_dt_to     DateTime? @db.Date
+  created_by      String    @db.VarChar(30)
+  created_dt      DateTime  @default(now()) @db.Timestamptz(6)
+  changed_by      String?   @db.VarChar(30)
+  changed_dt      DateTime? @db.Timestamptz(6)
+
+  @@id([system_type, system_cd], map: "pk_tb_m_system")
+  @@index([system_type, active_flag, system_cd], map: "ix_tb_m_system_active")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_m_template {
+  template_cd            String                  @id(map: "pk_tb_m_template") @default(dbgenerated("fn_generate_master_code('TPL'::text, 'seq_template_cd'::regclass)")) @db.VarChar(30)
+  template_key           String                  @unique(map: "uq_tb_m_template_key") @db.VarChar(100)
+  template_name          String                  @db.VarChar(150)
+  invitation_type_cd     String                  @db.VarChar(30)
+  template_category_cd   String                  @db.VarChar(30)
+  description            String?
+  thumbnail_url          String                  @db.VarChar(1000)
+  preview_url            String?                 @db.VarChar(1000)
+  premium_flag           Boolean                 @default(false)
+  active_flag            Boolean                 @default(true)
+  sort_order             Int                     @default(0)
+  created_by             String                  @db.VarChar(30)
+  created_dt             DateTime                @default(now()) @db.Timestamptz(6)
+  changed_by             String?                 @db.VarChar(30)
+  changed_dt             DateTime?               @db.Timestamptz(6)
+  deleted_flag           Boolean                 @default(false)
+  deleted_by             String?                 @db.VarChar(30)
+  deleted_dt             DateTime?               @db.Timestamptz(6)
+  tb_m_template_category tb_m_template_category  @relation(fields: [template_category_cd], references: [template_category_cd], onUpdate: Restrict, map: "fk_tb_m_template_category")
+  tb_m_invitation_type   tb_m_invitation_type    @relation(fields: [invitation_type_cd], references: [invitation_type_cd], onUpdate: Restrict, map: "fk_tb_m_template_invitation_type")
+  tb_m_template_version  tb_m_template_version[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_m_template_category {
+  template_category_cd String          @id(map: "pk_tb_m_template_category") @default(dbgenerated("fn_generate_master_code('TPC'::text, 'seq_template_category_cd'::regclass)")) @db.VarChar(30)
+  category_key         String          @unique(map: "uq_tb_m_template_category_key") @db.VarChar(50)
+  category_name        String          @db.VarChar(100)
+  description          String?         @db.VarChar(500)
+  sort_order           Int             @default(0)
+  active_flag          Boolean         @default(true)
+  created_by           String          @db.VarChar(30)
+  created_dt           DateTime        @default(now()) @db.Timestamptz(6)
+  changed_by           String?         @db.VarChar(30)
+  changed_dt           DateTime?       @db.Timestamptz(6)
+  deleted_flag         Boolean         @default(false)
+  deleted_by           String?         @db.VarChar(30)
+  deleted_dt           DateTime?       @db.Timestamptz(6)
+  tb_m_template        tb_m_template[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tb_m_template_version {
+  template_version_cd String              @id(map: "pk_tb_m_template_version") @default(dbgenerated("fn_generate_master_code('TPV'::text, 'seq_template_version_cd'::regclass)")) @db.VarChar(30)
+  template_cd         String              @db.VarChar(30)
+  version_no          String              @db.VarChar(20)
+  renderer_key        String              @db.VarChar(100)
+  default_config      Json?
+  schema_config       Json?
+  release_note        String?
+  current_flag        Boolean             @default(false)
+  active_flag         Boolean             @default(true)
+  created_by          String              @db.VarChar(30)
+  created_dt          DateTime            @default(now()) @db.Timestamptz(6)
+  changed_by          String?             @db.VarChar(30)
+  changed_dt          DateTime?           @db.Timestamptz(6)
+  deleted_flag        Boolean             @default(false)
+  deleted_by          String?             @db.VarChar(30)
+  deleted_dt          DateTime?           @db.Timestamptz(6)
+  tb_m_template       tb_m_template       @relation(fields: [template_cd], references: [template_cd], onUpdate: Restrict, map: "fk_tb_m_template_version_template")
+  tb_r_invitation_h   tb_r_invitation_h[]
+
+  @@unique([template_cd, version_no], map: "uq_tb_m_template_version")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model tb_m_user {
+  user_id           String              @id(map: "pk_tb_m_user") @default(dbgenerated("fn_generate_transaction_code('USR'::text, 'seq_user_id'::regclass)")) @db.VarChar(30)
+  email             String              @db.VarChar(255)
+  password_hash     String              @db.VarChar(500)
+  full_name         String              @db.VarChar(150)
+  phone_no          String?             @db.VarChar(30)
+  role_cd           String              @db.VarChar(30)
+  status_cd         String              @db.VarChar(30)
+  email_verified_dt DateTime?           @db.Timestamptz(6)
+  last_login_dt     DateTime?           @db.Timestamptz(6)
+  created_by        String              @db.VarChar(30)
+  created_dt        DateTime            @default(now()) @db.Timestamptz(6)
+  changed_by        String?             @db.VarChar(30)
+  changed_dt        DateTime?           @db.Timestamptz(6)
+  deleted_flag      Boolean             @default(false)
+  deleted_by        String?             @db.VarChar(30)
+  deleted_dt        DateTime?           @db.Timestamptz(6)
+  tb_r_invitation_h tb_r_invitation_h[]
+  tb_r_order_h      tb_r_order_h[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_guest {
+  guest_id          String            @id(map: "pk_tb_r_guest") @default(dbgenerated("fn_generate_transaction_code('GST'::text, 'seq_guest_id'::regclass)")) @db.VarChar(30)
+  invitation_id     String            @db.VarChar(30)
+  guest_name        String            @db.VarChar(200)
+  phone_no          String?           @db.VarChar(30)
+  email             String?           @db.VarChar(255)
+  guest_token       String            @unique(map: "uq_tb_r_guest_token") @db.VarChar(100)
+  group_name        String?           @db.VarChar(100)
+  max_guest_qty     Int               @default(1)
+  invited_flag      Boolean           @default(false)
+  opened_flag       Boolean           @default(false)
+  first_opened_dt   DateTime?         @db.Timestamptz(6)
+  last_opened_dt    DateTime?         @db.Timestamptz(6)
+  created_by        String            @db.VarChar(30)
+  created_dt        DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by        String?           @db.VarChar(30)
+  changed_dt        DateTime?         @db.Timestamptz(6)
+  deleted_flag      Boolean           @default(false)
+  deleted_by        String?           @db.VarChar(30)
+  deleted_dt        DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_guest_invitation")
+  tb_r_guestbook    tb_r_guestbook[]
+  tb_r_rsvp         tb_r_rsvp?
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_guestbook {
+  guestbook_id      String            @id(map: "pk_tb_r_guestbook") @default(dbgenerated("fn_generate_transaction_code('GBK'::text, 'seq_guestbook_id'::regclass)")) @db.VarChar(30)
+  invitation_id     String            @db.VarChar(30)
+  guest_id          String?           @db.VarChar(30)
+  guest_name        String            @db.VarChar(200)
+  message           String
+  status_cd         String            @default("PENDING") @db.VarChar(30)
+  created_by        String            @db.VarChar(30)
+  created_dt        DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by        String?           @db.VarChar(30)
+  changed_dt        DateTime?         @db.Timestamptz(6)
+  deleted_flag      Boolean           @default(false)
+  deleted_by        String?           @db.VarChar(30)
+  deleted_dt        DateTime?         @db.Timestamptz(6)
+  tb_r_guest        tb_r_guest?       @relation(fields: [guest_id], references: [guest_id], onDelete: Restrict, onUpdate: Restrict, map: "fk_tb_r_guestbook_guest")
+  tb_r_invitation_h tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_guestbook_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_event {
+  invitation_event_id String            @id(map: "pk_tb_r_invitation_event") @default(dbgenerated("fn_generate_transaction_code('EVT'::text, 'seq_invitation_event_id'::regclass)")) @db.VarChar(30)
+  invitation_id       String            @db.VarChar(30)
+  event_type_cd       String            @db.VarChar(50)
+  event_title         String            @db.VarChar(150)
+  event_date          DateTime          @db.Date
+  start_time          DateTime?         @db.Time(6)
+  end_time            DateTime?         @db.Time(6)
+  timezone            String            @default("Asia/Jakarta") @db.VarChar(50)
+  venue_name          String?           @db.VarChar(255)
+  venue_address       String?
+  latitude            Decimal?          @db.Decimal(10, 7)
+  longitude           Decimal?          @db.Decimal(10, 7)
+  map_url             String?           @db.VarChar(1000)
+  dress_code          String?           @db.VarChar(255)
+  description         String?
+  sort_order          Int               @default(0)
+  active_flag         Boolean           @default(true)
+  created_by          String            @db.VarChar(30)
+  created_dt          DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by          String?           @db.VarChar(30)
+  changed_dt          DateTime?         @db.Timestamptz(6)
+  deleted_flag        Boolean           @default(false)
+  deleted_by          String?           @db.VarChar(30)
+  deleted_dt          DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h   tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_event_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_gift {
+  invitation_gift_id String            @id(map: "pk_tb_r_invitation_gift") @default(dbgenerated("fn_generate_transaction_code('GFT'::text, 'seq_invitation_gift_id'::regclass)")) @db.VarChar(30)
+  invitation_id      String            @db.VarChar(30)
+  gift_type_cd       String            @db.VarChar(30)
+  bank_name          String?           @db.VarChar(100)
+  account_no         String?           @db.VarChar(100)
+  account_name       String?           @db.VarChar(150)
+  wallet_provider    String?           @db.VarChar(100)
+  wallet_no          String?           @db.VarChar(100)
+  recipient_name     String?           @db.VarChar(150)
+  shipping_address   String?
+  qr_code_url        String?           @db.VarChar(1000)
+  sort_order         Int               @default(0)
+  active_flag        Boolean           @default(true)
+  created_by         String            @db.VarChar(30)
+  created_dt         DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by         String?           @db.VarChar(30)
+  changed_dt         DateTime?         @db.Timestamptz(6)
+  deleted_flag       Boolean           @default(false)
+  deleted_by         String?           @db.VarChar(30)
+  deleted_dt         DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h  tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_gift_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tb_r_invitation_h {
+  invitation_id           String                    @id(map: "pk_tb_r_invitation_h") @default(dbgenerated("fn_generate_transaction_code('INV'::text, 'seq_invitation_id'::regclass)")) @db.VarChar(30)
+  user_id                 String                    @db.VarChar(30)
+  invitation_type_cd      String                    @db.VarChar(30)
+  template_version_cd     String                    @db.VarChar(30)
+  title                   String                    @db.VarChar(200)
+  slug                    String                    @unique(map: "uq_tb_r_invitation_h_slug") @db.VarChar(150)
+  status_cd               String                    @default("DRAFT") @db.VarChar(30)
+  opening_title           String?                   @db.VarChar(255)
+  opening_message         String?
+  closing_message         String?
+  cover_image_url         String?                   @db.VarChar(1000)
+  music_url               String?                   @db.VarChar(1000)
+  music_autoplay_flag     Boolean                   @default(false)
+  theme_config            Json?
+  seo_config              Json?
+  published_dt            DateTime?                 @db.Timestamptz(6)
+  expired_dt              DateTime?                 @db.Timestamptz(6)
+  created_by              String                    @db.VarChar(30)
+  created_dt              DateTime                  @default(now()) @db.Timestamptz(6)
+  changed_by              String?                   @db.VarChar(30)
+  changed_dt              DateTime?                 @db.Timestamptz(6)
+  deleted_flag            Boolean                   @default(false)
+  deleted_by              String?                   @db.VarChar(30)
+  deleted_dt              DateTime?                 @db.Timestamptz(6)
+  tb_r_guest              tb_r_guest[]
+  tb_r_guestbook          tb_r_guestbook[]
+  tb_r_invitation_event   tb_r_invitation_event[]
+  tb_r_invitation_gift    tb_r_invitation_gift[]
+  tb_m_template_version   tb_m_template_version     @relation(fields: [template_version_cd], references: [template_version_cd], onUpdate: Restrict, map: "fk_tb_r_invitation_h_template_version")
+  tb_m_invitation_type    tb_m_invitation_type      @relation(fields: [invitation_type_cd], references: [invitation_type_cd], onUpdate: Restrict, map: "fk_tb_r_invitation_h_type")
+  tb_m_user               tb_m_user                 @relation(fields: [user_id], references: [user_id], onUpdate: Restrict, map: "fk_tb_r_invitation_h_user")
+  tb_r_invitation_media   tb_r_invitation_media[]
+  tb_r_invitation_person  tb_r_invitation_person[]
+  tb_r_invitation_section tb_r_invitation_section[]
+  tb_r_invitation_story   tb_r_invitation_story[]
+  tb_r_order_h            tb_r_order_h[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_media {
+  invitation_media_id String            @id(map: "pk_tb_r_invitation_media") @default(dbgenerated("fn_generate_transaction_code('MED'::text, 'seq_invitation_media_id'::regclass)")) @db.VarChar(30)
+  invitation_id       String            @db.VarChar(30)
+  media_type_cd       String            @db.VarChar(30)
+  media_category_cd   String            @db.VarChar(50)
+  file_url            String            @db.VarChar(1000)
+  thumbnail_url       String?           @db.VarChar(1000)
+  original_file_name  String?           @db.VarChar(255)
+  mime_type           String?           @db.VarChar(100)
+  file_size           BigInt?
+  width               Int?
+  height              Int?
+  alt_text            String?           @db.VarChar(255)
+  sort_order          Int               @default(0)
+  created_by          String            @db.VarChar(30)
+  created_dt          DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by          String?           @db.VarChar(30)
+  changed_dt          DateTime?         @db.Timestamptz(6)
+  deleted_flag        Boolean           @default(false)
+  deleted_by          String?           @db.VarChar(30)
+  deleted_dt          DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h   tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_media_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_person {
+  invitation_person_id String            @id(map: "pk_tb_r_invitation_person") @default(dbgenerated("fn_generate_transaction_code('PRS'::text, 'seq_invitation_person_id'::regclass)")) @db.VarChar(30)
+  invitation_id        String            @db.VarChar(30)
+  person_role_cd       String            @db.VarChar(50)
+  display_name         String            @db.VarChar(150)
+  full_name            String?           @db.VarChar(200)
+  nickname             String?           @db.VarChar(100)
+  gender_cd            String?           @db.VarChar(20)
+  father_name          String?           @db.VarChar(200)
+  mother_name          String?           @db.VarChar(200)
+  instagram_url        String?           @db.VarChar(500)
+  photo_url            String?           @db.VarChar(1000)
+  additional_data      Json?
+  sort_order           Int               @default(0)
+  created_by           String            @db.VarChar(30)
+  created_dt           DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by           String?           @db.VarChar(30)
+  changed_dt           DateTime?         @db.Timestamptz(6)
+  deleted_flag         Boolean           @default(false)
+  deleted_by           String?           @db.VarChar(30)
+  deleted_dt           DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h    tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_person_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_section {
+  invitation_section_id String            @id(map: "pk_tb_r_invitation_section") @default(dbgenerated("fn_generate_transaction_code('SCT'::text, 'seq_invitation_section_id'::regclass)")) @db.VarChar(30)
+  invitation_id         String            @db.VarChar(30)
+  section_type_cd       String            @db.VarChar(50)
+  title                 String?           @db.VarChar(255)
+  subtitle              String?           @db.VarChar(500)
+  content_config        Json?
+  style_config          Json?
+  enabled_flag          Boolean           @default(true)
+  sort_order            Int               @default(0)
+  created_by            String            @db.VarChar(30)
+  created_dt            DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by            String?           @db.VarChar(30)
+  changed_dt            DateTime?         @db.Timestamptz(6)
+  deleted_flag          Boolean           @default(false)
+  deleted_by            String?           @db.VarChar(30)
+  deleted_dt            DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h     tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_section_invitation")
+
+  @@unique([invitation_id, section_type_cd], map: "uq_tb_r_invitation_section")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_invitation_story {
+  invitation_story_id String            @id(map: "pk_tb_r_invitation_story") @default(dbgenerated("fn_generate_transaction_code('STR'::text, 'seq_invitation_story_id'::regclass)")) @db.VarChar(30)
+  invitation_id       String            @db.VarChar(30)
+  story_title         String            @db.VarChar(200)
+  story_date          DateTime?         @db.Date
+  description         String
+  image_url           String?           @db.VarChar(1000)
+  sort_order          Int               @default(0)
+  active_flag         Boolean           @default(true)
+  created_by          String            @db.VarChar(30)
+  created_dt          DateTime          @default(now()) @db.Timestamptz(6)
+  changed_by          String?           @db.VarChar(30)
+  changed_dt          DateTime?         @db.Timestamptz(6)
+  deleted_flag        Boolean           @default(false)
+  deleted_by          String?           @db.VarChar(30)
+  deleted_dt          DateTime?         @db.Timestamptz(6)
+  tb_r_invitation_h   tb_r_invitation_h @relation(fields: [invitation_id], references: [invitation_id], onUpdate: Restrict, map: "fk_tb_r_invitation_story_invitation")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tb_r_order_d {
+  order_detail_id String        @id(map: "pk_tb_r_order_d") @default(dbgenerated("fn_generate_transaction_code('ODT'::text, 'seq_order_detail_id'::regclass)")) @db.VarChar(30)
+  order_id        String        @db.VarChar(30)
+  item_type_cd    String        @default("PACKAGE") @db.VarChar(30)
+  reference_cd    String?       @db.VarChar(30)
+  item_name       String        @db.VarChar(200)
+  qty             Int           @default(1)
+  unit_price_amt  Decimal       @default(0) @db.Decimal(18, 2)
+  discount_amt    Decimal       @default(0) @db.Decimal(18, 2)
+  total_amt       Decimal       @default(0) @db.Decimal(18, 2)
+  created_by      String        @db.VarChar(30)
+  created_dt      DateTime      @default(now()) @db.Timestamptz(6)
+  changed_by      String?       @db.VarChar(30)
+  changed_dt      DateTime?     @db.Timestamptz(6)
+  deleted_flag    Boolean       @default(false)
+  deleted_by      String?       @db.VarChar(30)
+  deleted_dt      DateTime?     @db.Timestamptz(6)
+  tb_r_order_h    tb_r_order_h  @relation(fields: [order_id], references: [order_id], onUpdate: Restrict, map: "fk_tb_r_order_d_order")
+  tb_m_package    tb_m_package? @relation(fields: [reference_cd], references: [package_cd], onDelete: Restrict, onUpdate: Restrict, map: "fk_tb_r_order_d_package")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_order_h {
+  order_id          String             @id(map: "pk_tb_r_order_h") @default(dbgenerated("fn_generate_transaction_code('ORD'::text, 'seq_order_id'::regclass)")) @db.VarChar(30)
+  order_no          String             @unique(map: "uq_tb_r_order_h_order_no") @default(dbgenerated("fn_generate_order_no('seq_order_no'::regclass)")) @db.VarChar(50)
+  user_id           String             @db.VarChar(30)
+  invitation_id     String?            @db.VarChar(30)
+  status_cd         String             @default("PENDING") @db.VarChar(30)
+  subtotal_amt      Decimal            @default(0) @db.Decimal(18, 2)
+  discount_amt      Decimal            @default(0) @db.Decimal(18, 2)
+  tax_amt           Decimal            @default(0) @db.Decimal(18, 2)
+  total_amt         Decimal            @default(0) @db.Decimal(18, 2)
+  currency_cd       String             @default("IDR") @db.VarChar(10)
+  ordered_dt        DateTime           @default(now()) @db.Timestamptz(6)
+  paid_dt           DateTime?          @db.Timestamptz(6)
+  completed_dt      DateTime?          @db.Timestamptz(6)
+  created_by        String             @db.VarChar(30)
+  created_dt        DateTime           @default(now()) @db.Timestamptz(6)
+  changed_by        String?            @db.VarChar(30)
+  changed_dt        DateTime?          @db.Timestamptz(6)
+  deleted_flag      Boolean            @default(false)
+  deleted_by        String?            @db.VarChar(30)
+  deleted_dt        DateTime?          @db.Timestamptz(6)
+  tb_r_order_d      tb_r_order_d[]
+  tb_r_invitation_h tb_r_invitation_h? @relation(fields: [invitation_id], references: [invitation_id], onDelete: Restrict, onUpdate: Restrict, map: "fk_tb_r_order_h_invitation")
+  tb_m_user         tb_m_user          @relation(fields: [user_id], references: [user_id], onUpdate: Restrict, map: "fk_tb_r_order_h_user")
+  tb_r_payment      tb_r_payment[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tb_r_payment {
+  payment_id              String       @id(map: "pk_tb_r_payment") @default(dbgenerated("fn_generate_transaction_code('PAY'::text, 'seq_payment_id'::regclass)")) @db.VarChar(30)
+  order_id                String       @db.VarChar(30)
+  provider_cd             String       @db.VarChar(30)
+  provider_transaction_id String?      @db.VarChar(255)
+  payment_method_cd       String?      @db.VarChar(50)
+  amount                  Decimal      @db.Decimal(18, 2)
+  currency_cd             String       @default("IDR") @db.VarChar(10)
+  status_cd               String       @default("PENDING") @db.VarChar(30)
+  payment_url             String?      @db.VarChar(1000)
+  paid_dt                 DateTime?    @db.Timestamptz(6)
+  expired_dt              DateTime?    @db.Timestamptz(6)
+  provider_response       Json?
+  created_by              String       @db.VarChar(30)
+  created_dt              DateTime     @default(now()) @db.Timestamptz(6)
+  changed_by              String?      @db.VarChar(30)
+  changed_dt              DateTime?    @db.Timestamptz(6)
+  deleted_flag            Boolean      @default(false)
+  deleted_by              String?      @db.VarChar(30)
+  deleted_dt              DateTime?    @db.Timestamptz(6)
+  tb_r_order_h            tb_r_order_h @relation(fields: [order_id], references: [order_id], onUpdate: Restrict, map: "fk_tb_r_payment_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tb_r_rsvp {
+  rsvp_id              String     @id(map: "pk_tb_r_rsvp") @default(dbgenerated("fn_generate_transaction_code('RSV'::text, 'seq_rsvp_id'::regclass)")) @db.VarChar(30)
+  guest_id             String     @unique(map: "uq_tb_r_rsvp_guest") @db.VarChar(30)
+  attendance_status_cd String     @db.VarChar(30)
+  guest_qty            Int        @default(0)
+  message              String?
+  submitted_dt         DateTime   @default(now()) @db.Timestamptz(6)
+  created_by           String     @db.VarChar(30)
+  created_dt           DateTime   @default(now()) @db.Timestamptz(6)
+  changed_by           String?    @db.VarChar(30)
+  changed_dt           DateTime?  @db.Timestamptz(6)
+  deleted_flag         Boolean    @default(false)
+  deleted_by           String?    @db.VarChar(30)
+  deleted_dt           DateTime?  @db.Timestamptz(6)
+  tb_r_guest           tb_r_guest @relation(fields: [guest_id], references: [guest_id], onUpdate: Restrict, map: "fk_tb_r_rsvp_guest")
+}

@@ -1,0 +1,39 @@
+{
+  "name": "elora-wish-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "prisma:pull": "prisma db pull",
+    "prisma:generate": "prisma generate",
+    "db:check": "node scripts/read-only-db-check.js",
+    "seed:dev": "node scripts/seed-dev-users.js",
+    "validate": "npm run lint && npm test"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@prisma/client": "^6.14.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^17.2.1",
+    "fastify": "^5.5.0",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "eslint": "^9.33.0",
+    "globals": "^16.3.0",
+    "prisma": "^6.14.0",
+    "vitest": "^3.2.4"
+  }
+}
