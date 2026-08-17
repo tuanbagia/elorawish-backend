@@ -42,6 +42,10 @@ This project is database-first. `prisma/schema.prisma` was introspected from the
 | `GET` | `/api/v1/auth/me` | Cookie | Reload the current active user from PostgreSQL |
 | `POST` | `/api/v1/auth/logout` | Public | Clear the auth cookie |
 | `GET` | `/api/v1/health` | Public | Service liveness |
+| `GET` | `/api/v1/invitations/catalog` | CLIENT cookie | Active invitation types and usable current templates |
+| `GET` | `/api/v1/invitations` | CLIENT cookie | List the authenticated client&apos;s invitations |
+| `GET` | `/api/v1/invitations/:invitationId` | CLIENT cookie | Read one owned invitation |
+| `POST` | `/api/v1/invitations` | CLIENT cookie | Atomically create one DRAFT, two people, and one event |
 
 The JWT is sent only in an `HttpOnly`, `SameSite=Lax` cookie and is never
 included in JSON. The cookie is always `Secure` in production and follows
@@ -53,6 +57,17 @@ Registration input is strict. Unknown properties—including `role`, `roleCode`,
 Registration validation matches `tb_m_user`: names are limited to 150
 characters, emails to 255 characters, and phone numbers to 30 characters.
 The same 255-character email limit applies to login.
+
+Invitation creation validates and normalizes the slug, requires exactly one
+`GROOM` and one `BRIDE`, fixes the event timezone to `Asia/Jakarta`, and accepts
+only an active/current template version belonging to the requested active
+invitation type. Ownership and audit actors always come from the authenticated
+CLIENT session. Header, people, and event inserts share one Prisma transaction;
+PostgreSQL generates all `INV`, `PRS`, and `EVT` identifiers.
+
+Owned invitation list/detail queries include `user_id` and `deleted_flag=false`
+inside the repository query. A missing invitation and another client&apos;s
+invitation both return the same safe `404 NOT_FOUND` response.
 
 ## Existing USER_ID generator
 

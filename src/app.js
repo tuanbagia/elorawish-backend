@@ -11,6 +11,9 @@ import { AuthService } from './modules/auth/auth.service.js';
 import { argonPasswordHasher } from './modules/auth/password.js';
 import { createRequireAuth, createRequireRole } from './modules/auth/auth.guard.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import invitationRoutes from './modules/invitation/invitation.routes.js';
+import { InvitationService } from './modules/invitation/invitation.service.js';
+import { PrismaInvitationRepository } from './modules/invitation/invitation.repository.js';
 
 const loggerOptions = {
   level: process.env.LOG_LEVEL ?? 'info',
@@ -34,6 +37,7 @@ const loggerOptions = {
 export async function buildApp({
   config,
   userRepository,
+  invitationRepository,
   passwordHasher = argonPasswordHasher,
   logger = loggerOptions,
 } = {}) {
@@ -87,9 +91,10 @@ export async function buildApp({
     });
   });
 
+  let prisma;
   let users = userRepository;
   if (!users) {
-    const prisma = new PrismaClient();
+    prisma = new PrismaClient();
     await prisma.$connect();
     app.decorate('prisma', prisma);
     app.addHook('onClose', () => prisma.$disconnect());
@@ -102,6 +107,17 @@ export async function buildApp({
     prefix: '/api/v1/auth',
     authService,
   });
+
+  const invitations = invitationRepository ?? (
+    prisma ? new PrismaInvitationRepository(prisma) : null
+  );
+  if (invitations) {
+    const invitationService = new InvitationService({ invitationRepository: invitations });
+    await app.register(invitationRoutes, {
+      prefix: '/api/v1/invitations',
+      invitationService,
+    });
+  }
 
   app.get('/api/v1/health', async () => ({
     data: { status: 'ok', timestamp: new Date().toISOString() },
