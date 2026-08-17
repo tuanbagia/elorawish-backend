@@ -1,13 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 
 const config = {
   NODE_ENV: 'test',
   PORT: 4000,
   DATABASE_URL: 'postgresql://unused:unused@localhost:5432/unused',
-  WEB_ORIGIN: 'http://localhost:3000',
+  WEB_ORIGIN: 'http://localhost:3001',
   JWT_SECRET: 'test-secret-that-is-at-least-thirty-two-characters',
   AUTH_COOKIE_NAME: 'elora_auth',
+  AUTH_COOKIE_SECURE: false,
   AUTH_SESSION_DAYS: 1,
   AUTH_REMEMBER_DAYS: 30,
 };
@@ -79,10 +80,10 @@ class FakeUserRepository {
 
 const apps = [];
 
-async function setup(seed = []) {
+async function setup(seed = [], configOverrides = {}) {
   const repository = new FakeUserRepository(seed);
   const app = await buildApp({
-    config,
+    config: { ...config, ...configOverrides },
     userRepository: repository,
     passwordHasher,
     logger: false,
@@ -100,6 +101,17 @@ function validRegistration(overrides = {}) {
     confirmPassword: 'password123',
     ...overrides,
   };
+}
+
+function boundaryEmail(finalLabelLength) {
+  return `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(finalLabelLength)}`;
+}
+
+function spyOnRegistrationRepository(repository) {
+  return [
+    vi.spyOn(repository, 'findByEmail'),
+    vi.spyOn(repository, 'createPublicUser'),
+  ];
 }
 
 function authCookie(response) {
@@ -128,7 +140,66 @@ describe('POST /api/v1/auth/register', () => {
     expect(response.body).not.toContain('passwordHash');
     expect(response.body).not.toContain('password123');
     expect(repository.lastCreateInput.email).toBe('nadia@example.com');
-    expect(authCookie(response)).toMatchObject({ httpOnly: true, secure: true });
+    expect(authCookie(response).httpOnly).toBe(true);
+    expect(Boolean(authCookie(response).secure)).toBe(false);
+  });
+
+  it('accepts a full name at the 150-character database boundary', async () => {
+    const { app, repository } = await setup();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: validRegistration({ fullName: 'N'.repeat(150) }),
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repository.lastCreateInput.fullName).toHaveLength(150);
+  });
+
+  it('rejects a 151-character full name before calling the repository', async () => {
+    const { app, repository } = await setup();
+    const repositoryMethods = spyOnRegistrationRepository(repository);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: validRegistration({ fullName: 'N'.repeat(151) }),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+    expect(response.statusCode).not.toBe(500);
+    for (const method of repositoryMethods) expect(method).not.toHaveBeenCalled();
+  });
+
+  it('accepts a syntactically valid email at the 255-character database boundary', async () => {
+    const { app, repository } = await setup();
+    const email = boundaryEmail(62);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: validRegistration({ email }),
+    });
+
+    expect(email).toHaveLength(255);
+    expect(response.statusCode).toBe(201);
+    expect(repository.lastCreateInput.email).toBe(email);
+  });
+
+  it('rejects an email over 255 characters before calling the repository', async () => {
+    const { app, repository } = await setup();
+    const repositoryMethods = spyOnRegistrationRepository(repository);
+    const email = boundaryEmail(63);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: validRegistration({ email }),
+    });
+
+    expect(email).toHaveLength(256);
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+    expect(response.statusCode).not.toBe(500);
+    for (const method of repositoryMethods) expect(method).not.toHaveBeenCalled();
   });
 
   it('rejects a duplicate email', async () => {
@@ -178,10 +249,48 @@ describe('POST /api/v1/auth/login', () => {
     expect(response.json().data).not.toHaveProperty('token');
     expect(authCookie(response)).toMatchObject({
       httpOnly: true,
-      secure: true,
       sameSite: 'Lax',
       maxAge: 86400,
     });
+    expect(Boolean(authCookie(response).secure)).toBe(false);
+  });
+
+  it('rejects an email over 255 characters before lookup', async () => {
+    const { app, repository } = await setup([makeUser()]);
+    const findByEmail = vi.spyOn(repository, 'findByEmail');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: boundaryEmail(63), password: 'password123' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+    expect(response.statusCode).not.toBe(500);
+    expect(findByEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['development default', 'development', undefined, false],
+    ['test configured secure', 'test', true, true],
+    ['test configured insecure', 'test', false, false],
+    ['production forced secure', 'production', false, true],
+  ])('uses environment-aware cookie security in %s', async (_label, nodeEnv, configured, secure) => {
+    const { app } = await setup(
+      [makeUser()],
+      { NODE_ENV: nodeEnv, AUTH_COOKIE_SECURE: configured },
+    );
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'nadia@example.com', password: 'password123' },
+    });
+    const logout = await app.inject({ method: 'POST', url: '/api/v1/auth/logout' });
+
+    expect(Boolean(authCookie(login).secure)).toBe(secure);
+    expect(Boolean(authCookie(logout).secure)).toBe(secure);
+    expect(authCookie(login)).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
+    expect(authCookie(logout)).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
   });
 
   it('uses the remember-me expiry', async () => {

@@ -1,13 +1,13 @@
 import { parseBody } from '../../shared/validation.js';
 import { loginSchema, registerSchema } from './auth.schemas.js';
 
-function cookieOptions(maxAge) {
+function cookieOptions(fastify, extra = {}) {
   return {
     httpOnly: true,
-    secure: true,
+    secure: fastify.authConfig.cookieSecure,
     sameSite: 'lax',
     path: '/',
-    maxAge,
+    ...extra,
   };
 }
 
@@ -20,7 +20,11 @@ function setSession(fastify, reply, user, rememberMe) {
     { role: user.role },
     { sub: user.id, expiresIn: maxAge },
   );
-  reply.setCookie(fastify.authConfig.cookieName, token, cookieOptions(maxAge));
+  reply.setCookie(
+    fastify.authConfig.cookieName,
+    token,
+    cookieOptions(fastify, { maxAge }),
+  );
 }
 
 export default async function authRoutes(fastify, { authService }) {
@@ -46,12 +50,7 @@ export default async function authRoutes(fastify, { authService }) {
   });
 
   fastify.post('/logout', async (_request, reply) => {
-    reply.clearCookie(fastify.authConfig.cookieName, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-    });
+    reply.clearCookie(fastify.authConfig.cookieName, cookieOptions(fastify));
     return { data: { message: 'Logged out' } };
   });
 }

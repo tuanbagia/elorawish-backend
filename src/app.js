@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { PrismaClient } from '@prisma/client';
+import { resolveAuthCookieSecure } from './config/env.js';
 import { AppError } from './shared/errors.js';
 import { PrismaUserRepository } from './modules/user/user.repository.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -49,6 +50,7 @@ export async function buildApp({
 
   app.decorate('authConfig', {
     cookieName: config.AUTH_COOKIE_NAME,
+    cookieSecure: resolveAuthCookieSecure(config.NODE_ENV, config.AUTH_COOKIE_SECURE),
     sessionDays: config.AUTH_SESSION_DAYS,
     rememberDays: config.AUTH_REMEMBER_DAYS,
   });

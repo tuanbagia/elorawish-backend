@@ -4,7 +4,7 @@ Fastify 5 / JavaScript ESM authentication API for the existing Elora Wish Postgr
 
 ## Requirements
 
-- Node.js 24+
+- Node.js 22.12 or newer within the Node.js 22 release line
 - PostgreSQL with the authoritative `public.tb_m_user` table
 - Environment variables copied from `.env.example`
 
@@ -22,6 +22,15 @@ npm run dev
 
 On PowerShell, use `Copy-Item .env.example .env` instead of `cp` if desired. Set real values locally and never commit `.env`.
 
+`AUTH_COOKIE_SECURE` accepts only `true` or `false`. It defaults to `false` in
+development and test so local HTTP works, and can be enabled explicitly when
+testing HTTPS. Production always forces secure authentication cookies even if
+the environment value is mistakenly set to `false`.
+
+For local authentication integration, set `WEB_ORIGIN=http://localhost:3001`.
+This allows credentialed requests from the dashboard only; the homepage on port
+3000 redirects users to the dashboard and does not call the authentication API.
+
 This project is database-first. `prisma/schema.prisma` was introspected from the authoritative development database and retains its exact native types, relationships, defaults, and generator metadata. Use `prisma db pull` to refresh it after intentional database-side schema changes. Review introspection diffs before accepting them. Do not run Prisma migrations or `db push` against this database.
 
 ## API
@@ -34,9 +43,16 @@ This project is database-first. `prisma/schema.prisma` was introspected from the
 | `POST` | `/api/v1/auth/logout` | Public | Clear the auth cookie |
 | `GET` | `/api/v1/health` | Public | Service liveness |
 
-The JWT is sent only in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie. It is never included in JSON. Normal sessions use `AUTH_SESSION_DAYS`; `rememberMe: true` uses `AUTH_REMEMBER_DAYS`.
+The JWT is sent only in an `HttpOnly`, `SameSite=Lax` cookie and is never
+included in JSON. The cookie is always `Secure` in production and follows
+`AUTH_COOKIE_SECURE` in development and test. Normal sessions use
+`AUTH_SESSION_DAYS`; `rememberMe: true` uses `AUTH_REMEMBER_DAYS`.
 
 Registration input is strict. Unknown properties—including `role`, `roleCode`, `status`, and `statusCode`—are rejected. The repository independently fixes public registrations to `role_cd=CLIENT`, `status_cd=ACTIVE`, and `deleted_flag=false`.
+
+Registration validation matches `tb_m_user`: names are limited to 150
+characters, emails to 255 characters, and phone numbers to 30 characters.
+The same 255-character email limit applies to login.
 
 ## Existing USER_ID generator
 
