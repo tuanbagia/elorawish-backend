@@ -46,6 +46,7 @@ This project is database-first. `prisma/schema.prisma` was introspected from the
 | `GET` | `/api/v1/invitations` | CLIENT cookie | List the authenticated client&apos;s invitations |
 | `GET` | `/api/v1/invitations/:invitationId` | CLIENT cookie | Read one owned invitation |
 | `POST` | `/api/v1/invitations` | CLIENT cookie | Atomically create one DRAFT, two people, and one event |
+| `PATCH` | `/api/v1/invitations/:invitationId` | CLIENT cookie | Concurrency-safe update of one owned DRAFT and its existing children |
 
 The JWT is sent only in an `HttpOnly`, `SameSite=Lax` cookie and is never
 included in JSON. The cookie is always `Secure` in production and follows
@@ -68,6 +69,12 @@ PostgreSQL generates all `INV`, `PRS`, and `EVT` identifiers.
 Owned invitation list/detail queries include `user_id` and `deleted_flag=false`
 inside the repository query. A missing invitation and another client&apos;s
 invitation both return the same safe `404 NOT_FOUND` response.
+
+Draft updates require the last returned `updatedAt` as `expectedUpdatedAt`.
+Ownership, `DRAFT` status, and the stored version are constrained inside one
+transaction. A stale editor receives `409 EDIT_CONFLICT`; a non-draft receives
+`409 INVITATION_NOT_EDITABLE`. Existing person and event identifiers are
+preserved, and all changed audit fields share one authenticated actor/timestamp.
 
 ## Existing USER_ID generator
 

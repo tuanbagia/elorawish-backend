@@ -49,6 +49,22 @@ export class InvitationService {
       throw error;
     }
   }
+
+  async updateInvitation(userId, invitationId, input) {
+    try {
+      return await this.invitations.updateAtomic({
+        ...input,
+        invitationId,
+        userId,
+        now: this.clock(),
+      });
+    } catch (error) {
+      if (isSlugConflict(error)) {
+        throw new ConflictError('This invitation URL is already in use');
+      }
+      throw error;
+    }
+  }
 }
 
 function isSlugConflict(error) {

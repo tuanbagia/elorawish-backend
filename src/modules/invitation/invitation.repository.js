@@ -1,3 +1,11 @@
+import {
+  EditConflictError,
+  InvitationNotEditableError,
+  InvitationStructureError,
+  NotFoundError,
+  ValidationError,
+} from '../../shared/errors.js';
+
 const invitationSelection = {
   invitation_id: true,
   title: true,
@@ -13,9 +21,12 @@ const invitationSelection = {
   },
   tb_m_template_version: {
     select: {
+      template_version_cd: true,
+      version_no: true,
       renderer_key: true,
       tb_m_template: {
         select: {
+          template_cd: true,
           template_key: true,
           template_name: true,
           thumbnail_url: true,
@@ -126,36 +137,11 @@ export class PrismaInvitationRepository {
   }
 
   async findUsableTemplateVersion(invitationTypeKey, templateVersionId) {
-    const row = await this.prisma.tb_m_template_version.findFirst({
-      where: {
-        template_version_cd: templateVersionId,
-        active_flag: true,
-        current_flag: true,
-        deleted_flag: false,
-        tb_m_template: {
-          is: {
-            active_flag: true,
-            deleted_flag: false,
-            tb_m_invitation_type: {
-              is: {
-                type_key: invitationTypeKey,
-                active_flag: true,
-                deleted_flag: false,
-              },
-            },
-          },
-        },
-      },
-      select: {
-        template_version_cd: true,
-        tb_m_template: { select: { invitation_type_cd: true } },
-      },
-    });
-    if (!row) return null;
-    return {
-      templateVersionId: row.template_version_cd,
-      invitationTypeId: row.tb_m_template.invitation_type_cd,
-    };
+    return findUsableTemplateVersionWith(
+      this.prisma,
+      invitationTypeKey,
+      templateVersionId,
+    );
   }
 
   async findAllOwnedBy(userId) {
@@ -258,6 +244,212 @@ export class PrismaInvitationRepository {
       return toInvitation(created);
     });
   }
+
+  updateAtomic(input) {
+    return this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.tb_r_invitation_h.findFirst({
+        where: {
+          invitation_id: input.invitationId,
+          user_id: input.userId,
+          deleted_flag: false,
+        },
+        select: {
+          invitation_id: true,
+          invitation_type_cd: true,
+          status_cd: true,
+          created_dt: true,
+          changed_dt: true,
+          tb_r_invitation_person: {
+            select: {
+              invitation_person_id: true,
+              person_role_cd: true,
+              deleted_flag: true,
+            },
+          },
+          tb_r_invitation_event: {
+            select: {
+              invitation_event_id: true,
+              active_flag: true,
+              deleted_flag: true,
+            },
+          },
+        },
+      });
+
+      if (!existing) throw new NotFoundError('Invitation not found');
+      if (existing.status_cd !== 'DRAFT') throw new InvitationNotEditableError();
+
+      const storedVersion = existing.changed_dt ?? existing.created_dt;
+      if (storedVersion.toISOString() !== input.expectedUpdatedAt) {
+        throw new EditConflictError();
+      }
+
+      const selection = await findUsableTemplateVersionWith(
+        transaction,
+        input.invitationTypeKey,
+        input.templateVersionId,
+      );
+      if (
+        !selection ||
+        input.invitationTypeKey !== 'WEDDING' ||
+        selection.invitationTypeId !== existing.invitation_type_cd
+      ) {
+        throw unavailableTemplateError();
+      }
+
+      const children = editableChildren(existing);
+      const changedAt = nextChangedAt(input.now, storedVersion);
+      const versionWhere = existing.changed_dt
+        ? { changed_dt: existing.changed_dt }
+        : { changed_dt: null };
+      const header = await transaction.tb_r_invitation_h.updateMany({
+        where: {
+          invitation_id: input.invitationId,
+          user_id: input.userId,
+          status_cd: 'DRAFT',
+          deleted_flag: false,
+          ...versionWhere,
+        },
+        data: {
+          template_version_cd: selection.templateVersionId,
+          title: input.title,
+          slug: input.slug,
+          opening_title: input.openingTitle,
+          opening_message: input.openingMessage,
+          closing_message: input.closingMessage,
+          changed_by: input.userId,
+          changed_dt: changedAt,
+        },
+      });
+      if (header.count !== 1) throw new EditConflictError();
+
+      for (const personInput of input.people) {
+        const person = children.people[personInput.role];
+        const updated = await transaction.tb_r_invitation_person.updateMany({
+          where: {
+            invitation_person_id: person.invitation_person_id,
+            invitation_id: input.invitationId,
+            person_role_cd: personInput.role,
+            deleted_flag: false,
+          },
+          data: {
+            display_name: personInput.displayName,
+            full_name: personInput.fullName,
+            father_name: personInput.fatherName,
+            mother_name: personInput.motherName,
+            gender_cd: personInput.role === 'GROOM' ? 'MALE' : 'FEMALE',
+            sort_order: personOrder(personInput.role),
+            changed_by: input.userId,
+            changed_dt: changedAt,
+          },
+        });
+        if (updated.count !== 1) throw new InvitationStructureError();
+      }
+
+      const event = await transaction.tb_r_invitation_event.updateMany({
+        where: {
+          invitation_event_id: children.event.invitation_event_id,
+          invitation_id: input.invitationId,
+          deleted_flag: false,
+        },
+        data: {
+          event_type_cd: 'WEDDING',
+          event_title: input.event.title,
+          event_date: dateValue(input.event.date),
+          start_time: timeValue(input.event.startTime),
+          end_time: timeValue(input.event.endTime),
+          timezone: 'Asia/Jakarta',
+          venue_name: input.event.venueName,
+          venue_address: input.event.venueAddress,
+          map_url: input.event.mapUrl,
+          sort_order: 1,
+          active_flag: true,
+          changed_by: input.userId,
+          changed_dt: changedAt,
+        },
+      });
+      if (event.count !== 1) throw new InvitationStructureError();
+
+      const updated = await transaction.tb_r_invitation_h.findFirst({
+        where: {
+          invitation_id: input.invitationId,
+          user_id: input.userId,
+          deleted_flag: false,
+        },
+        select: invitationSelection,
+      });
+      return toInvitation(updated);
+    });
+  }
+}
+
+async function findUsableTemplateVersionWith(client, invitationTypeKey, templateVersionId) {
+  const row = await client.tb_m_template_version.findFirst({
+    where: {
+      template_version_cd: templateVersionId,
+      active_flag: true,
+      current_flag: true,
+      deleted_flag: false,
+      tb_m_template: {
+        is: {
+          active_flag: true,
+          deleted_flag: false,
+          tb_m_invitation_type: {
+            is: {
+              type_key: invitationTypeKey,
+              active_flag: true,
+              deleted_flag: false,
+            },
+          },
+        },
+      },
+    },
+    select: {
+      template_version_cd: true,
+      tb_m_template: { select: { invitation_type_cd: true } },
+    },
+  });
+  if (!row) return null;
+  return {
+    templateVersionId: row.template_version_cd,
+    invitationTypeId: row.tb_m_template.invitation_type_cd,
+  };
+}
+
+function unavailableTemplateError() {
+  return new ValidationError('Selected invitation template is unavailable', [{
+    field: 'templateVersionId',
+    message: 'Select an active current template',
+  }]);
+}
+
+function editableChildren(invitation) {
+  if (
+    invitation.tb_r_invitation_person.length !== 2 ||
+    invitation.tb_r_invitation_event.length !== 1 ||
+    invitation.tb_r_invitation_event[0].deleted_flag ||
+    !invitation.tb_r_invitation_event[0].active_flag
+  ) {
+    throw new InvitationStructureError();
+  }
+  const people = Object.fromEntries(
+    invitation.tb_r_invitation_person.map((person) => [person.person_role_cd, person]),
+  );
+  if (
+    !people.GROOM ||
+    !people.BRIDE ||
+    people.GROOM.deleted_flag ||
+    people.BRIDE.deleted_flag
+  ) {
+    throw new InvitationStructureError();
+  }
+  return { people, event: invitation.tb_r_invitation_event[0] };
+}
+
+function nextChangedAt(now, storedVersion) {
+  return now.getTime() > storedVersion.getTime()
+    ? now
+    : new Date(storedVersion.getTime() + 1);
 }
 
 function toCatalogType(row) {
@@ -308,9 +500,12 @@ function toInvitation(row) {
       name: row.tb_m_invitation_type.type_name,
     },
     template: {
+      id: template.template_cd,
       key: template.template_key,
       name: template.template_name,
       thumbnailUrl: template.thumbnail_url,
+      versionId: row.tb_m_template_version.template_version_cd,
+      version: row.tb_m_template_version.version_no,
       rendererKey: row.tb_m_template_version.renderer_key,
     },
     people: row.tb_r_invitation_person.map((person) => ({

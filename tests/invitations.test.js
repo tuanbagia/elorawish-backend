@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { normalizeSlug } from '../src/modules/invitation/invitation.schemas.js';
+import {
+  EditConflictError,
+  InvitationNotEditableError,
+  NotFoundError,
+  ValidationError,
+} from '../src/shared/errors.js';
 
 const config = {
   NODE_ENV: 'test',
@@ -57,6 +63,22 @@ class FakeInvitationRepository {
       })),
       events: [{ id: 'EVT-generated', type: 'WEDDING', ...input.event, timezone: 'Asia/Jakarta' }],
     }));
+    this.updateAtomic = vi.fn(async (input) => {
+      const found = this.invitations.find(
+        (item) => item.id === input.invitationId &&
+          item.ownerId === input.userId &&
+          !item.deletedFlag,
+      );
+      if (!found) throw new NotFoundError('Invitation not found');
+      if (found.status !== 'DRAFT') throw new InvitationNotEditableError();
+      if (found.updatedAt !== input.expectedUpdatedAt) throw new EditConflictError();
+      Object.assign(found, {
+        title: input.title,
+        slug: input.slug,
+        updatedAt: '2026-08-17T10:00:00.000Z',
+      });
+      return withoutOwner(found);
+    });
   }
 }
 
@@ -117,6 +139,13 @@ function validPayload(overrides = {}) {
   };
 }
 
+function validUpdatePayload(overrides = {}) {
+  return validPayload({
+    expectedUpdatedAt: '2026-08-17T09:00:00.000Z',
+    ...overrides,
+  });
+}
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
@@ -127,6 +156,11 @@ describe('invitation route authorization', () => {
     { method: 'GET', url: '/api/v1/invitations' },
     { method: 'GET', url: '/api/v1/invitations/INV-001' },
     { method: 'POST', url: '/api/v1/invitations', payload: validPayload() },
+    {
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      payload: validUpdatePayload(),
+    },
   ];
 
   for (const route of routes) {
@@ -147,6 +181,25 @@ describe('invitation route authorization', () => {
       expect(response.json().error.code).toBe('FORBIDDEN');
     });
   }
+});
+
+describe('invitation CORS', () => {
+  it('allows credentialed PATCH preflight from the configured dashboard origin', async () => {
+    const { app } = await setup();
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/invitations/INV-001',
+      headers: {
+        origin: config.WEB_ORIGIN,
+        'access-control-request-method': 'PATCH',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(config.WEB_ORIGIN);
+    expect(response.headers['access-control-allow-methods']).toContain('PATCH');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+  });
 });
 
 describe('GET /api/v1/invitations/catalog', () => {
@@ -303,6 +356,11 @@ describe('owned invitation reads', () => {
     expect(response.statusCode).toBe(200);
     expect(repository.findOwnedById).toHaveBeenCalledWith('USR-CLIENT', 'INV-001');
     expect(response.json().data.invitation.id).toBe('INV-001');
+    expect(response.json().data.invitation.template).toMatchObject({
+      id: 'TPL-1',
+      versionId: 'TPV-usable',
+      version: '1.0.0',
+    });
   });
 
   it('returns the same 404 for another CLIENT invitation and a missing invitation', async () => {
@@ -319,6 +377,159 @@ describe('owned invitation reads', () => {
         message: 'Invitation not found',
       });
     }
+  });
+});
+
+describe('PATCH /api/v1/invitations/:invitationId', () => {
+  it('updates an owned DRAFT with normalized input and authenticated audit identity', async () => {
+    const { app, repository } = await setup();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload({ title: 'Updated Couple', slug: '  Úpdated Couple  ' }),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.invitation).toMatchObject({
+      id: 'INV-001',
+      title: 'Updated Couple',
+      slug: 'updated-couple',
+      updatedAt: '2026-08-17T10:00:00.000Z',
+    });
+    expect(repository.updateAtomic).toHaveBeenCalledWith(expect.objectContaining({
+      invitationId: 'INV-001',
+      userId: 'USR-CLIENT',
+      expectedUpdatedAt: '2026-08-17T09:00:00.000Z',
+      slug: 'updated-couple',
+      now: expect.any(Date),
+    }));
+  });
+
+  it.each(['INV-OTHER', 'INV-MISSING'])('returns the same 404 for %s', async (id) => {
+    const { app } = await setup();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/invitations/${id}`,
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toEqual({
+      code: 'NOT_FOUND',
+      message: 'Invitation not found',
+    });
+  });
+
+  it('treats a deleted owned invitation as not found', async () => {
+    const { app, repository } = await setup();
+    repository.invitations[0].deletedFlag = true;
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns a stable conflict for an owned non-DRAFT invitation', async () => {
+    const { app, repository } = await setup();
+    repository.invitations[0].status = 'ACTIVE';
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toEqual({
+      code: 'INVITATION_NOT_EDITABLE',
+      message: 'Only draft invitations can be edited',
+    });
+  });
+
+  it('rejects stale edits without calling a second write', async () => {
+    const { app, repository } = await setup();
+    repository.invitations[0].updatedAt = '2026-08-17T10:00:00.000Z';
+    const before = structuredClone(repository.invitations[0]);
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload({ title: 'Stale overwrite' }),
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('EDIT_CONFLICT');
+    expect(repository.invitations[0]).toEqual(before);
+  });
+
+  it.each([
+    ['unknown field', { status: 'ACTIVE' }],
+    ['person ID', { people: validPayload().people.map((person) => ({ ...person, id: 'PRS-browser' })) }],
+    ['event ID', { event: { ...validPayload().event, id: 'EVT-browser' } }],
+    ['invalid timestamp', { expectedUpdatedAt: 'yesterday' }],
+    ['invalid date', { event: { ...validPayload().event, date: '2026-02-30' } }],
+    ['duplicate role', { people: validPayload().people.map((person) => ({ ...person, role: 'BRIDE' })) }],
+  ])('rejects %s before the repository update', async (_label, overrides) => {
+    const { app, repository } = await setup();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(overrides),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+    expect(repository.updateAtomic).not.toHaveBeenCalled();
+  });
+
+  it('returns safe distinct template and slug conflicts', async () => {
+    const { app, repository } = await setup();
+    repository.updateAtomic.mockRejectedValueOnce(new ValidationError(
+      'Selected invitation template is unavailable',
+      [{ field: 'templateVersionId', message: 'Select an active current template' }],
+    ));
+    const templateResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(templateResponse.statusCode).toBe(400);
+    expect(templateResponse.json().error.code).toBe('VALIDATION_ERROR');
+
+    repository.updateAtomic.mockRejectedValueOnce(Object.assign(new Error('raw database'), {
+      code: 'P2002',
+      meta: { target: ['slug'] },
+    }));
+    const slugResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(slugResponse.statusCode).toBe(409);
+    expect(slugResponse.json().error).toEqual({
+      code: 'CONFLICT',
+      message: 'This invitation URL is already in use',
+    });
+    expect(slugResponse.body).not.toContain('raw database');
+  });
+
+  it('does not expose an unexpected persistence error', async () => {
+    const { app, repository } = await setup();
+    repository.updateAtomic.mockRejectedValue(new Error('raw Prisma connection detail'));
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/invitations/INV-001',
+      headers: { cookie: cookie(app, 'USR-CLIENT', 'CLIENT') },
+      payload: validUpdatePayload(),
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('raw Prisma connection detail');
   });
 });
 
@@ -383,9 +594,12 @@ function invitation(overrides = {}) {
     updatedAt: '2026-08-17T09:00:00.000Z',
     invitationType: { key: 'WEDDING', name: 'Wedding' },
     template: {
+      id: 'TPL-1',
       key: 'SUNDAY_BLOOM',
       name: 'Sunday Bloom',
       thumbnailUrl: '/template-thumbnails/sunday-bloom.svg',
+      versionId: 'TPV-usable',
+      version: '1.0.0',
       rendererKey: 'sunday-bloom',
     },
     people: [],

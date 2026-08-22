@@ -37,3 +37,25 @@ export class ConflictError extends AppError {
     super(409, 'CONFLICT', message);
   }
 }
+
+export class EditConflictError extends AppError {
+  constructor() {
+    super(
+      409,
+      'EDIT_CONFLICT',
+      'This invitation was updated elsewhere. Reload the latest version before saving.',
+    );
+  }
+}
+
+export class InvitationNotEditableError extends AppError {
+  constructor() {
+    super(409, 'INVITATION_NOT_EDITABLE', 'Only draft invitations can be edited');
+  }
+}
+
+export class InvitationStructureError extends AppError {
+  constructor() {
+    super(409, 'INVITATION_STRUCTURE_INVALID', 'This invitation cannot be edited safely');
+  }
+}

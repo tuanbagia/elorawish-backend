@@ -54,8 +54,7 @@ const eventSchema = z
     }
   });
 
-export const createInvitationSchema = z
-  .object({
+const editableInvitationFields = {
     invitationTypeKey: z.string().trim().max(50).regex(/^[A-Z0-9_]+$/),
     templateVersionId: z.string().trim().min(1).max(30),
     title: z.string().trim().min(1).max(200),
@@ -67,9 +66,17 @@ export const createInvitationSchema = z
     closingMessage: optionalText(5000),
     people: z.array(personSchema).length(2),
     event: eventSchema,
-  })
-  .strict()
-  .superRefine((input, context) => {
+  };
+
+export const createInvitationSchema = invitationSchema(editableInvitationFields);
+
+export const updateInvitationSchema = invitationSchema({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+  ...editableInvitationFields,
+});
+
+function invitationSchema(shape) {
+  return z.object(shape).strict().superRefine((input, context) => {
     for (const role of ['GROOM', 'BRIDE']) {
       if (input.people.filter((person) => person.role === role).length !== 1) {
         context.addIssue({
@@ -80,6 +87,7 @@ export const createInvitationSchema = z
       }
     }
   });
+}
 
 export const invitationParamsSchema = z
   .object({ invitationId: z.string().trim().min(1).max(30) })
